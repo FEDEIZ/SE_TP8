@@ -33,9 +33,9 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-/** @file blinking.c
+/** @file TP n° 8
  **
- ** @brief Ejemplo de un led parpadeando
+ ** @brief Trabajo Practico n° 8 de Sistemas embebidos de tiempo realizacion        
  **
  ** Ejemplo de un led parpadeando utilizando la capa de abstraccion de
  ** hardware y con sistema operativo FreeRTOS.
@@ -59,6 +59,12 @@
 /* === Definicion y Macros ================================================= */
 
 /* === Declaraciones de tipos de datos internos ============================ */
+typedef struct parametros_s {
+    digital_output_t led;
+    uint16_t periodo;
+    digital_input_t tecla;   
+} * parametros_t;
+
 
 /* === Declaraciones de funciones internas ================================= */
 
@@ -71,9 +77,50 @@ static board_t board;
 /* === Definiciones de funciones internas ================================== */
 
 void Blinking(void * parameters) {
+    parametros_t parametros = (parametros_t) parameters;
     while (true) {
-        DigitalOutputToggle(board->led_azul);
-        vTaskDelay(pdMS_TO_TICKS(500));
+        DigitalOutputToggle(parametros->led);
+        vTaskDelay(pdMS_TO_TICKS(parametros->periodo));
+    }
+}
+
+void Amarillo(void * parameters) {
+    parametros_t parametros = (parametros_t) parameters;
+    TickType_t ultimo_valor;
+
+    ultimo_valor = xTaskGetTickCount();
+
+    while (true) {
+        DigitalOutputToggle(parametros->led);
+        vTaskDelayUntil(&ultimo_valor,pdMS_TO_TICKS(parametros->periodo));
+    }
+}
+
+void Azul(void * parameters){
+    parametros_t parametros = (parametros_t) parameters;
+    while (true) {
+        if(DigitalInputHasActivated(parametros->tecla)){
+            DigitalOutputToggle(parametros->led);
+        }
+        vTaskDelay(pdMS_TO_TICKS(parametros->periodo)); // antirebote del teclado
+    }
+}
+
+void Teclado(void * parameters){
+    parametros_t parametros = (parametros_t) parameters;
+    TaskHandle_t tarea;
+    eTaskState state;
+
+    tarea = xTaskGetHandle("Rojo");
+    state = eTaskGetState(tarea);
+    
+    while (true) {
+        if(DigitalInputHasActivated(parametros->tecla) && state == eSuspended){
+            vTaskResume(tarea);
+        } else if(DigitalInputHasActivated(parametros->tecla) && state == eReady){
+            vTaskSuspend(tarea);
+        }
+        vTaskDelay(pdMS_TO_TICKS(parametros->periodo)); // antirebote del teclado
     }
 }
 
@@ -87,11 +134,33 @@ void Blinking(void * parameters) {
  **          El valor de retorno 0 es para evitar un error en el compilador.
  */
 int main(void) {
+    static struct parametros_s parametros[3];
+
     /* Inicializaciones y configuraciones de dispositivos */
     board = BoardCreate();
 
+    parametros[0].led = board-> led_rojo;
+    parametros[0].periodo = 500;
+
+    parametros[1].led = board-> led_verde;
+    parametros[1].periodo = 750;    
+
+    parametros[2].led = board-> led_amarillo;
+    parametros[2].periodo = 250; 
+
+    parametros[3].led = board-> led_azul;
+    parametros[3].periodo = 250;
+    parametros[3].tecla = board->boton_prueba;
+
+    parametros[4].tecla = board-> boton_prender;
+    parametros[4].periodo = 250;
+
     /* Creación de las tareas */
-    xTaskCreate(Blinking, "Baliza", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(Blinking, "Rojo", configMINIMAL_STACK_SIZE, &parametros[0], tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(Blinking, "Verde", configMINIMAL_STACK_SIZE, &parametros[1], tskIDLE_PRIORITY + 2, NULL);
+    xTaskCreate(Amarillo, "Amarillo", configMINIMAL_STACK_SIZE, &parametros[2], tskIDLE_PRIORITY + 3, NULL);
+    xTaskCreate(Azul, "Azul", configMINIMAL_STACK_SIZE, &parametros[3], tskIDLE_PRIORITY +4, NULL);
+    xTaskCreate(Teclado, "Teclado", configMINIMAL_STACK_SIZE, &parametros[4], tskIDLE_PRIORITY +4, NULL);
 
     /* Arranque del sistema operativo */
     vTaskStartScheduler();
